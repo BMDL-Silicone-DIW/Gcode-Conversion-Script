@@ -2,6 +2,6 @@
 /.venv/
 /.uv-cache/
 
-# Generated Python bytecode
+# Generated Python bytecode (.py[cod] = .pyc|.pyo|.pyd)
 __pycache__/
 *.py[cod]
