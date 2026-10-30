@@ -1,0 +1,7 @@
+# Project-local Python environment and uv cache
+/.venv/
+/.uv-cache/
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]
