@@ -1,0 +1,23 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[[package]]
+name = "gcode-conversion-script"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "gcodeparser" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "gcodeparser", specifier = "==0.3.0" }]
+
+[[package]]
+name = "gcodeparser"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/8d/d77496a4c04aebc910c4c2e3532335fb2ef70f925b74376b9dd8082a702c/gcodeparser-0.3.0.tar.gz", hash = "sha256:9c202527e7255ff9bd95c74c7fd51fc9a62cc73ccf37b4b03a90e3b62ab1630b", size = 8254, upload-time = "2025-12-14T19:52:22.851Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/bf/b595b93e43adcac3b004ef9dde26fade62935b8e14701cec1e2a35577acc/gcodeparser-0.3.0-py3-none-any.whl", hash = "sha256:4b35d9f9fea16639ee30cb9eb3b2c5fd0d521639edf55e8235232446d791c603", size = 9903, upload-time = "2025-12-14T19:52:21.752Z" },
+]
