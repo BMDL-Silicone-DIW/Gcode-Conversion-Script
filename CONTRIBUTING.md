@@ -7,7 +7,7 @@ Here are some conventions potential contributors or developers should follow. Th
 Here are some general descriptions of the branches:
 
 - `main` is the main branch for **verified** versions only. **:exclamation: Do not directly commit to `main` unless you know what you are doing!**
-- `dev` is the overall development branch, and `dev/<feature>` branches are the actual development branches for corresponding features.
+- `dev` is the overall development branch, and `feat/<feature>` branches are the actual development branches for corresponding features.
   - The feature branches will be merged to `dev` for combined testing, and if verified, merge into `main` via **pull requests**.
 - `test` branch is reserved for creating testcases and do the tests. **CI** will also be developed in this branch.
   - Changes on feature or `dev` branches will be merged here for testing, and if anything breaks, we go back to corresponding `dev` or feature branches for correction.
