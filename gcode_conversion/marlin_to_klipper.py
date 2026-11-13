@@ -1,5 +1,6 @@
 """Translation rules for the Marlin-to-Klipper direction."""
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal   # Precise base-10 decimal arithmetic, avoiding floating-point errors
 from typing import Literal
@@ -119,7 +120,8 @@ def _select_tool(slot: int | None, state: ToolState, location: str) -> None:
 def _translate_dwell(command: GcodeLine, location: str) -> None:
     """
     Convert a Marlin G4 S (seconds) dwell to Klipper G4 P (milliseconds) in place.
-    **Caution:** This function does not check if the command is actually G4!"""
+    **Caution:** This function does not check if the command is actually G4!
+    """
     if "S" not in command.params:
         return
 
@@ -139,22 +141,52 @@ def _translate_dwell(command: GcodeLine, location: str) -> None:
 
 # Public functions for external use
 
-def apply_rules(record: GcodeRecord, state: ToolState) -> None:
-    """Apply the implemented rules to one record in source order."""
-    command = record.command
-    if not isinstance(command, GcodeLine):
-        return
-
+def apply_rules(record: GcodeRecord, state: ToolState) -> bool:
+    """
+    Apply the rules in source order and return whether to keep this record.
+    **Note:** This function acts as a dispatcher, and expects the individual rule functions / commands to do the conversion in place!
+    """
     location = f"{record.source}:{record.line_number}"
+    command = record.command
+
+    # Directly keep all non-native Gcode lines (comments, Klipper-style readable commands, etc.)
+    if not isinstance(command, GcodeLine):
+        return True
+
+    # Match commands case by case. Arrange the cases in alphabetical order with increasing numbers!
     match command.command:
+        case ("G", 0 | 1 | 2 | 3) if "E" in command.params:
+            material = state.active_material
+            if material is None:
+                raise ValueError(f"{location}: E move before the selected mix is defined")
+            if material == "plastic":
+                # Keep the travel and any modal feedrate update.
+                del command.params["E"]
+                return bool(command.params)   # delete command if no other parameters remain
         case ("G", 4):
             _translate_dwell(command, location)
+        case ("G", 92) if "E" in command.params:
+            material = state.active_material
+            # Setting E coordinate is allowed before defined selected mix, so do nothing if `material` is None.
+            if material == "plastic":
+                del command.params["E"]
+                # Klipper resets all axes when G92 has no axis parameters.
+                return any(axis in command.params for axis in ("X", "Y", "Z"))
         case ("M", 163):
             _set_mix_weight(command, state, location)
+            return False
         case ("M", 164):
             _save_mix(command, state, location)
+            return False
         case ("T", slot):
             _select_tool(slot, state, location)
-        case ("G", 0 | 1) if "E" in command.params:
-            if state.active_material is None:
-                raise ValueError(f"{location}: E move before the selected mix is defined")
+            return False
+    return True
+
+
+def convert_records(records: Iterable[GcodeRecord]) -> Iterator[GcodeRecord]:
+    """Yield kept records for one file with a fresh conversion state."""
+    state = ToolState()
+    for record in records:
+        if apply_rules(record, state):
+            yield record
