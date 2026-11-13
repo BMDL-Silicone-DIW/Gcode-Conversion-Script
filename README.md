@@ -18,4 +18,47 @@ To address all these needs altogether, this repository is created and will be de
 
 ## Dependencies and Usage
 
-:hourglass: We are still developing the scripts. We will fill this part once we figure this out.
+This section is a brief guide on how to recreate the virtual environment and how to run the script.
+
+### Virtual environment reproduction
+
+This project requires Python 3.14 or later and uses [`uv`](https://docs.astral.sh/uv/) as the package manager. Please refer to the [installation guide](https://docs.astral.sh/uv/getting-started/installation/) with respect to your own operating system.
+
+After successful installation of `uv` (can be verified via `uv --version`), run
+
+```shell
+uv sync --locked
+```
+
+in the **root directory** of the project repository to install the dependencies from `uv.lock`.
+
+### Direct script execution
+
+From the repository root, run the conversion with an input path and a separate output path.
+
+```shell
+uv run python -m gcode_conversion --from marlin --to klipper "input.gcode" "output.gcode"
+```
+
+**Replace the example filenames** with your own paths. The output directory **must already exist**. An existing output file is **replaced** after a successful conversion.
+
+:exclamation: Run `uv run python -m gcode_conversion --help` for usage, especially when in doubt.
+
+:hourglass: Right now, only `--from marlin --to klipper` is supported. Other conversion paths will be developed later.
+
+### Imported as a module
+
+Python scripts run from the repository root can import the reader, conversion rules, and writer directly, as shown in the following demo.
+
+```python
+# Suppose the file is created on repository root
+from contextlib import closing   # automatically close files
+from pathlib import Path
+
+from gcode_conversion.marlin_to_klipper import convert_records
+from gcode_conversion.reader import read_gcode
+from gcode_conversion.writer import write_gcode
+
+with closing(read_gcode("input.gcode")) as records:
+    write_gcode(convert_records(records), Path("output.gcode"))
+```
