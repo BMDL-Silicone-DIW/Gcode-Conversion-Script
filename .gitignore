@@ -5,3 +5,6 @@
 # Generated Python bytecode (.py[cod] = .pyc|.pyo|.pyd)
 __pycache__/
 *.py[cod]
+
+# Testing outputs
+/test-output/
