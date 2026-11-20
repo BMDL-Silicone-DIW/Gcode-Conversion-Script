@@ -141,7 +141,9 @@ def _translate_dwell(command: GcodeLine, location: str) -> None:
 
 # Public functions for external use
 
-def apply_rules(record: GcodeRecord, state: ToolState) -> bool:
+def apply_rules(
+    record: GcodeRecord, state: ToolState, *, silicone_only: bool = False
+) -> bool:
     """
     Apply the rules in source order and return whether to keep this record.
     **Note:** This function acts as a dispatcher, and expects the individual rule functions / commands to do the conversion in place!
@@ -155,7 +157,7 @@ def apply_rules(record: GcodeRecord, state: ToolState) -> bool:
 
     # Match commands case by case. Arrange the cases in alphabetical order with increasing numbers!
     match command.command:
-        case ("G", 0 | 1 | 2 | 3) if "E" in command.params:
+        case ("G", 0 | 1 | 2 | 3) if silicone_only and "E" in command.params:
             material = state.active_material
             if material is None:
                 raise ValueError(f"{location}: E move before the selected mix is defined")
@@ -165,28 +167,44 @@ def apply_rules(record: GcodeRecord, state: ToolState) -> bool:
                 return bool(command.params)   # delete command if no other parameters remain
         case ("G", 4):
             _translate_dwell(command, location)
-        case ("G", 92) if "E" in command.params:
+        case ("G", 92) if silicone_only and "E" in command.params:
             material = state.active_material
             # Setting E coordinate is allowed before defined selected mix, so do nothing if `material` is None.
             if material == "plastic":
                 del command.params["E"]
                 # Klipper resets all axes when G92 has no axis parameters.
                 return any(axis in command.params for axis in ("X", "Y", "Z"))
-        case ("M", 163):
-            _set_mix_weight(command, state, location)
+        case ("M", 104) if silicone_only:
+            # Keep explicit heater-off commands for the configured logical extruder.
+            return command.params.get("S") == 0
+        case ("M", 106 | 107 | 109 | 140) if silicone_only:
             return False
-        case ("M", 164):
-            _save_mix(command, state, location)
-            return False
-        case ("T", slot):
-            _select_tool(slot, state, location)
+        case ("M", 163 | 164) | ("T", _):
+            if not silicone_only:
+                raise ValueError(
+                    f"{location}: {command.command_str} requires the --silicone-only profile; "
+                    "mixed-material tool conversion is not implemented"
+                )
+            match command.command:
+                case ("M", 163):
+                    _set_mix_weight(command, state, location)
+                    return False
+                case ("M", 164):
+                    _save_mix(command, state, location)
+                    return False
+                case ("T", slot):
+                    _select_tool(slot, state, location)
+                    return False
+        case ("M", 190) if silicone_only:
             return False
     return True
 
 
-def convert_records(records: Iterable[GcodeRecord]) -> Iterator[GcodeRecord]:
-    """Yield kept records for one file with a fresh conversion state."""
+def convert_records(
+    records: Iterable[GcodeRecord], *, silicone_only: bool = False
+) -> Iterator[GcodeRecord]:
+    """Yield kept records with explicitly enabled silicone-only behavior."""
     state = ToolState()
     for record in records:
-        if apply_rules(record, state):
+        if apply_rules(record, state, silicone_only=silicone_only):
             yield record

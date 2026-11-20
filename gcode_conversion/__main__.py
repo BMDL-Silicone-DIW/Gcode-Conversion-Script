@@ -20,6 +20,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--from", dest="source_format", required=True, help="Input G-code format")
     # `dest` is used to specify the attribute name in the `args` object, since `from` is a reserved keyword in Python.
     parser.add_argument("--to", dest="target_format", required=True, help="Output G-code format")
+    parser.add_argument(
+        "--silicone-only", action="store_true",
+        help="Enable fixed 1:1 silicone conversion and suppress plastic extrusion, heating, and fans",
+    )
+    # `action="store_true"` means setting `args.silicone_only` to `True` if the flag is present, otherwise `False`.
     parser.add_argument("input", type=Path, help="Input G-code file")
     parser.add_argument("output", type=Path, help="Destination file (replaced on success)")
     args = parser.parse_args(argv)
@@ -36,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("input and output must be different files")
 
         with closing(read_gcode(source)) as records:
-            write_gcode(converter(records), destination)
+            write_gcode(converter(records, silicone_only=args.silicone_only), destination)
     except (OSError, ValueError) as error:
         parser.exit(1, f"{parser.prog}: {error}\n")
 
