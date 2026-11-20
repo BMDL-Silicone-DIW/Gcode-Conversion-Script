@@ -47,7 +47,11 @@ def parse_line(raw: str, *, source: Path, line_number: int) -> GcodeRecord:
 
     body, marker, comment_text = text.partition(";")
     comment = marker + comment_text
-    body = body.strip()
+    stripped_body = body.rstrip()   # remove whitespace before comment marker
+    comment_separator = body[len(stripped_body):] if marker else ""
+        # Everything after valid body and before marker (whitespace or empty)
+        # This is intended to minimize diff noise
+    body = stripped_body.lstrip()
     if not body:
         return GcodeRecord(source, line_number, None, comment, line_ending)
 
@@ -79,7 +83,10 @@ def parse_line(raw: str, *, source: Path, line_number: int) -> GcodeRecord:
         if isinstance(value, float) and not math.isfinite(value):
             raise GcodeReadError(source, line_number, "non-finite parameter value")
 
-    return GcodeRecord(source, line_number, command, comment, line_ending)
+    return GcodeRecord(
+        source, line_number, command, comment, line_ending,
+        comment_separator=comment_separator,
+    )
 
 
 def read_gcode(path: str | Path) -> Iterator[GcodeRecord]:
