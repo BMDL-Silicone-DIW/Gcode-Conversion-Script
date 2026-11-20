@@ -156,6 +156,22 @@ def _translate_dwell(command: GcodeLine, location: str) -> None:
     del command.params["S"]
 
 
+def _translate_jerk(command: GcodeLine, location: str) -> KlipperCommand:
+    """Approximate equal Marlin XY classic jerk with Klipper corner velocity."""
+    if command.params.keys() != {"X", "Y"}:
+        raise ValueError(f"{location}: M205 translation requires only X and Y parameters")
+
+    x, y = command.params["X"], command.params["Y"]
+    if any(type(value) not in (int, float) or not 0 <= value < float("inf")
+           for value in (x, y)):
+        raise ValueError(f"{location}: M205 X and Y require finite nonnegative numbers")
+    if x != y:
+        raise ValueError(f"{location}: M205 translation requires equal X and Y jerk")
+
+    # Same numeric value is an initial approximation, not identical motion planning.
+    return KlipperCommand("SET_VELOCITY_LIMIT", {"SQUARE_CORNER_VELOCITY": x})
+
+
 # Public functions for external use
 
 def apply_rules(
@@ -220,6 +236,8 @@ def apply_rules(
                     return False
         case ("M", 190) if silicone_only:
             return False
+        case ("M", 205):
+            record.command = _translate_jerk(command, location)
     return True
 
 
