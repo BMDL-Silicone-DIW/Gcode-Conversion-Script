@@ -7,13 +7,18 @@ from typing import Literal
 
 from gcodeparser import GcodeLine
 
-from .model import GcodeRecord
+from .model import GcodeRecord, KlipperCommand
 
 
 type Material = Literal["silicone", "plastic"]
 
 # MIXING_VIRTUAL_TOOLS in the legacy Marlin configuration.
 _VIRTUAL_TOOL_COUNT = 16
+
+# Direct renames for parameterless commands. Parameter conversion needs a separate rule.
+_DIRECT_COMMANDS: dict[tuple[str, int], str] = {
+    ("G", 29): "BED_MESH_CALIBRATE",   # G29 assumes AUTO_BED_LEVELING_BILINEAR in Marlin and [bed_mesh] in Klipper.
+}
 
 
 @dataclass
@@ -69,6 +74,18 @@ class ToolState:
 
 
 # Functions starting with `_` are intended for internal use and not part of the public interface.
+
+def _translate_direct_command(
+    command: GcodeLine, target_name: str, location: str
+) -> KlipperCommand:
+    """Rename a parameterless command without discarding unsupported parameters."""
+    if command.params:
+        raise ValueError(
+            f"{location}: {command.command_str} with parameters is not implemented; "
+            "direct translation only supports the parameterless form"
+        )
+    return KlipperCommand(target_name)
+
 
 def _set_mix_weight(command: GcodeLine, state: ToolState, location: str) -> None:
     """
@@ -153,6 +170,12 @@ def apply_rules(
 
     # Directly keep all non-native Gcode lines (comments, Klipper-style readable commands, etc.)
     if not isinstance(command, GcodeLine):
+        return True
+
+    # Direct, parameterless commands can be renamed without further processing.
+    if (target_name := _DIRECT_COMMANDS.get(command.command)) is not None:
+        # `:=` is the walrus operator, i.e. assignment with return value
+        record.command = _translate_direct_command(command, target_name, location)
         return True
 
     # Match commands case by case. Arrange the cases in alphabetical order with increasing numbers!
