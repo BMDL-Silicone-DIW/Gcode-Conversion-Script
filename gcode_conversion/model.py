@@ -42,6 +42,8 @@ class GcodeRecord:
     """The comment text, including the leading semicolon if present."""
     line_ending: str
     """The line ending, including the newline character(s)."""
+    comment_separator: str = " "
+    """Whitespace between the command and its inline comment."""
 
     def render(self) -> str:
         """Write the current command with its original comment and line ending."""
@@ -61,5 +63,5 @@ class GcodeRecord:
         else:
             body = self.command or ""
 
-        separator = " " if body and self.comment else ""
+        separator = self.comment_separator if body and self.comment else ""
         return body + separator + self.comment + self.line_ending
