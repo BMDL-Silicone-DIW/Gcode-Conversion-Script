@@ -218,7 +218,7 @@ def apply_rules(
             return command.params.get("S") == 0
         case ("M", 106 | 107 | 109 | 140) if silicone_only:
             return False
-        case ("M", 163 | 164) | ("T", _):
+        case ("M", 163 | 164):
             if not silicone_only:
                 raise ValueError(
                     f"{location}: {command.command_str} requires the --silicone-only profile; "
@@ -231,13 +231,18 @@ def apply_rules(
                 case ("M", 164):
                     _save_mix(command, state, location)
                     return False
-                case ("T", slot):
-                    _select_tool(slot, state, location)
-                    return False
         case ("M", 190) if silicone_only:
             return False
         case ("M", 205):
             record.command = _translate_jerk(command, location)
+        case ("T", slot):
+            if not silicone_only:
+                raise ValueError(
+                    f"{location}: {command.command_str} requires the --silicone-only profile; "
+                    "mixed-material tool conversion is not implemented"
+                )
+            _select_tool(slot, state, location)
+            return False
     return True
 
 
