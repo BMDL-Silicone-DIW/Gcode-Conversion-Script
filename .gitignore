@@ -1,0 +1,10 @@
+# Project-local Python environment and uv cache
+/.venv/
+/.uv-cache/
+
+# Generated Python bytecode (.py[cod] = .pyc|.pyo|.pyd)
+__pycache__/
+*.py[cod]
+
+# Testing outputs
+/test-output/
