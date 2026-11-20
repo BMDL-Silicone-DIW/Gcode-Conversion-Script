@@ -7,6 +7,7 @@ from typing import Literal
 
 from gcodeparser import GcodeLine
 
+from .coordinates import XYTransform
 from .model import GcodeRecord, KlipperCommand
 
 
@@ -15,10 +16,23 @@ type Material = Literal["silicone", "plastic"]
 # MIXING_VIRTUAL_TOOLS in the legacy Marlin configuration.
 _VIRTUAL_TOOL_COUNT = 16
 
+# Placement defaults for the current single-material insole workflow.
+_PRINT_TRANSFORM = XYTransform(x_offset=-15)
+_PREPARATION_TRANSFORM = XYTransform(y_offset=165, clockwise=True)
+
 # Direct renames for parameterless commands. Parameter conversion needs a separate rule.
 _DIRECT_COMMANDS: dict[tuple[str, int], str] = {
     ("G", 29): "BED_MESH_CALIBRATE",   # G29 assumes AUTO_BED_LEVELING_BILINEAR in Marlin and [bed_mesh] in Klipper.
 }
+
+
+@dataclass
+class _CoordinateState:
+    """Remember coordinate mode and the approach preceding silicone tool selection."""
+
+    absolute: bool = True   # whether absolute (G90) or relative (G91) coordinates are in effect
+    preparation_approach: bool = False   # whether we are in preparation stage
+    previous_transform: XYTransform | None = None
 
 
 @dataclass
@@ -172,20 +186,73 @@ def _translate_jerk(command: GcodeLine, location: str) -> KlipperCommand:
     return KlipperCommand("SET_VELOCITY_LIMIT", {"SQUARE_CORNER_VELOCITY": x})
 
 
+def _convert_coordinates(
+    command: GcodeLine, state: ToolState, coordinates: _CoordinateState,
+    print_transform: XYTransform, preparation_transform: XYTransform, location: str,
+) -> None:
+    """
+    Change location of an absolute G0/G1 using the defined material and tool role.
+    This function is mainly intended for remapping out of bound moves.
+
+    **Note:** Right now `coordinates` is coordinate **transform state**, not actual coordinates!
+    """
+    if not ("X" in command.params or "Y" in command.params):
+        return
+    if not coordinates.absolute:
+        raise ValueError(f"{location}: relative XY placement needs position tracking")
+
+    material = state.active_material
+    transform = None
+    if material is not None:
+        # For silicone, T5 is start and normal print, T6 is for preparation
+        if coordinates.preparation_approach or (material == "silicone" and state.active_tool == 6):
+            transform = preparation_transform
+        elif material == "silicone":
+            if state.active_tool != 5:
+                raise ValueError(f"{location}: silicone placement requires T5 or T6")
+            transform = print_transform
+        # Plastic travel keeps its source coordinates unless approaching silicone preparation.
+
+        if transform is not None:
+            if transform != coordinates.previous_transform and not {"X", "Y"} <= command.params.keys():
+                # `<=` for sets means "is a subset of", whose negation means having at least one of the axes missing.
+                raise ValueError(f"{location}: changing placement requires both X and Y")
+            transform.apply(command, absolute=True)
+
+    for axis, lower, upper in (("X", -35, 245), ("Y", -30, 255)):
+        if axis not in command.params:
+            continue
+        if material is None:
+            # Undefined startup tools may travel (clamp to bounds), but cannot extrude (checked by the caller).
+            command.params[axis] = min(upper, max(lower, command.params[axis]))
+        elif not lower <= command.params[axis] <= upper:
+            raise ValueError(f"{location}: placed {axis} is outside {lower}..{upper} mm")
+    coordinates.previous_transform = transform
+
+
 # Public functions for external use
 
 def apply_rules(
-    record: GcodeRecord, state: ToolState, *, silicone_only: bool = False
+    record: GcodeRecord, state: ToolState, *, silicone_only: bool = False,
+    coordinates: _CoordinateState | None = None,
+    print_transform: XYTransform = _PRINT_TRANSFORM,
+    preparation_transform: XYTransform = _PREPARATION_TRANSFORM,
 ) -> bool:
     """
     Apply the rules in source order and return whether to keep this record.
-    **Note:** This function acts as a dispatcher, and expects the individual rule functions / commands to do the conversion in place!
+
+    **Note:**
+    - This function acts as a dispatcher, and expects the individual rule functions / commands to do the conversion in place!
+    - Right now `coordinates` is coordinate **transform state**, not actual coordinates!
     """
     location = f"{record.source}:{record.line_number}"
     command = record.command
 
     # Directly keep all non-native Gcode lines (comments, Klipper-style readable commands, etc.)
     if not isinstance(command, GcodeLine):
+        # Use comment to judge the start of silicone preparation.
+        if coordinates is not None and record.comment.strip() == ";TYPE:SILICONE-START":
+            coordinates.preparation_approach = True
         return True
 
     # Direct, parameterless commands can be renamed without further processing.
@@ -196,20 +263,33 @@ def apply_rules(
 
     # Match commands case by case. Arrange the cases in alphabetical order with increasing numbers!
     match command.command:
-        case ("G", 0 | 1 | 2 | 3) if silicone_only and "E" in command.params:
-            material = state.active_material
-            if material is None:
-                raise ValueError(f"{location}: E move before the selected mix is defined")
-            if material == "plastic":
-                # Keep the travel and any modal feedrate update.
-                del command.params["E"]
-                return bool(command.params)   # delete command if no other parameters remain
+        case ("G", 0 | 1 | 2 | 3) if silicone_only:
+            if coordinates is not None and command.command[1] in (2, 3):
+                # G2/G3 arcs are not supported in the current silicone placement workflow.
+                raise ValueError(f"{location}: placement does not support {command.command_str}")
+            if "E" in command.params:
+                material = state.active_material
+                if material is None:
+                    raise ValueError(f"{location}: E move before the selected mix is defined")
+                if material == "plastic":
+                    del command.params["E"]
+                    if not command.params:
+                        return False
+            if coordinates is not None:
+                _convert_coordinates(command, state, coordinates,
+                                     print_transform, preparation_transform, location)
         case ("G", 4):
             _translate_dwell(command, location)
-        case ("G", 92) if silicone_only and "E" in command.params:
+        case ("G", 20) if coordinates is not None:
+            raise ValueError(f"{location}: placement does not support inch units")
+        case ("G", 90 | 91) if coordinates is not None:
+            coordinates.absolute = command.command == ("G", 90)
+        case ("G", 92) if silicone_only:
+            if coordinates is not None and (not command.params or "X" in command.params or "Y" in command.params):
+                raise ValueError(f"{location}: placement does not support G92 XY resets")
             material = state.active_material
             # Setting E coordinate is allowed before defined selected mix, so do nothing if `material` is None.
-            if material == "plastic":
+            if material == "plastic" and "E" in command.params:
                 del command.params["E"]
                 # Klipper resets all axes when G92 has no axis parameters.
                 return any(axis in command.params for axis in ("X", "Y", "Z"))
@@ -242,15 +322,22 @@ def apply_rules(
                     "mixed-material tool conversion is not implemented"
                 )
             _select_tool(slot, state, location)
+            if coordinates is not None and slot == 5:
+                # Back to normal: deactivate preparation approach.
+                coordinates.preparation_approach = False
             return False
     return True
 
 
 def convert_records(
-    records: Iterable[GcodeRecord], *, silicone_only: bool = False
+    records: Iterable[GcodeRecord], *, silicone_only: bool = False,
+    print_transform: XYTransform = _PRINT_TRANSFORM,
+    preparation_transform: XYTransform = _PREPARATION_TRANSFORM,
 ) -> Iterator[GcodeRecord]:
-    """Yield kept records with explicitly enabled silicone-only behavior."""
+    """Yield converted records, retaining tool and coordinate state across lines."""
     state = ToolState()
+    coordinates = _CoordinateState() if silicone_only else None
     for record in records:
-        if apply_rules(record, state, silicone_only=silicone_only):
+        if apply_rules(record, state, silicone_only=silicone_only, coordinates=coordinates,
+                       print_transform=print_transform, preparation_transform=preparation_transform):
             yield record

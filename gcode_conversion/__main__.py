@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--to", dest="target_format", required=True, help="Output G-code format")
     parser.add_argument(
         "--silicone-only", action="store_true",
-        help="Enable fixed 1:1 silicone conversion and suppress plastic extrusion, heating, and fans",
+        help="Enable fixed 1:1 silicone conversion, current insole placement, and suppression of plastic extrusion, heating, and fans",
     )
     # `action="store_true"` means setting `args.silicone_only` to `True` if the flag is present, otherwise `False`.
     parser.add_argument("input", type=Path, help="Input G-code file")
