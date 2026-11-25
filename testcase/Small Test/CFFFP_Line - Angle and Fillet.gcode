@@ -107,6 +107,7 @@ G1 F2408 X82.574 Y39.15 E10.11825
 ;TIME_ELAPSED:10.305264
 ;LAYER:1
 ;This layer is just bare motions to pass MATLAB script
+G0 Z0.4 F6000; ! Need to increment Z for correct layer identification!
 G1 X200 Y100
 G1 X100 Y200
 ;TIME_ELAPSED:17.1243
