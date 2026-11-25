@@ -37,18 +37,12 @@ in the **root directory** of the project repository to install the dependencies 
 From the repository root, run the conversion with an input path and a separate output path.
 
 ```shell
-uv run python -m gcode_conversion --from marlin --to klipper --silicone-only "input.gcode" "output.gcode"
+uv run python -m gcode_conversion --from marlin --to klipper "input.gcode" "output.gcode"
 ```
 
 **Replace the example filenames** with your own paths. The output directory **must already exist**. An existing output file is **replaced** after a successful conversion.
 
-> [!IMPORTANT] Parameter Clarifications
->
-> - `--silicone-only` enables the **fixed 1:1 silicone profile (without heating or fan)**.
->   - It suppresses *plastic extrusion and E resets*, consumes the *legacy mix/tool commands*, and removes *heating requests*, temperature waits, bed heater / thermistor control, and *fan control*.
->     - Explicit `M104 S0` heater-off commands are retained.
->   - Without it, motion parameters and thermal/fan commands are preserved.
->     - Currently, for *Marlin to Klipper* conversion, `M163`, `M164`, and tool selections raise an error because mixed-material conversion is still pending.
+:bulb: There will be additional optional parameters for the specific conversion paths. Please refer to the [wiki](https://github.com/BMDL-Silicone-DIW/Gcode-Conversion-Script/wiki) for details!
 
 :exclamation: Run `uv run python -m gcode_conversion --help` for usage, especially when in doubt.
 
